@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>tema — сигналы</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    h1 { color: #58a6ff; font-size: 1.5rem; margin-bottom: 8px; }
+    .subtitle { color: #8b949e; font-size: 0.85rem; margin-bottom: 20px; }
+    .tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid #21262d; }
+    .tab { padding: 10px 20px; cursor: pointer; color: #8b949e; font-size: 0.9rem; border: none; background: none; border-bottom: 2px solid transparent; transition: all .2s; }
+    .tab:hover { color: #c9d1d9; }
+    .tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+    .card { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+    .card h2 { color: #c9d1d9; font-size: 1rem; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 0.75rem; color: #8b949e; text-transform: uppercase; padding: 8px 10px; border-bottom: 1px solid #21262d; }
+    td { padding: 8px 10px; font-size: 0.85rem; border-bottom: 1px solid #21262d; }
+    tr:hover { background: #1c2128; }
+    .positive { color: #3fb950; }
+    .negative { color: #f85149; }
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .tag-crowd { background: #f0883e22; color: #f0883e; }
+    .tag-neutral { background: #8b949e22; color: #8b949e; }
+    .tag-yes { background: #3fb95022; color: #3fb950; }
+    .tag-no { background: #f8514922; color: #f85149; }
+    .tag-open { background: #58a6ff22; color: #58a6ff; }
+    .tag-closed { background: #8b949e22; color: #8b949e; }
+    .strength-weak { color: #8b949e; }
+    .strength-medium { color: #d29922; }
+    .strength-strong { color: #f85149; font-weight: 700; }
+    .empty { text-align: center; padding: 40px; color: #8b949e; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr auto auto auto; gap: 10px; align-items: end; }
+    label { display: block; font-size: 0.75rem; color: #8b949e; margin-bottom: 4px; }
+    input, select { width: 100%; padding: 8px 12px; border: 1px solid #21262d; border-radius: 6px; background: #0d1117; color: #c9d1d9; font-size: 0.85rem; }
+    input:focus, select:focus { outline: none; border-color: #58a6ff; }
+    .btn { padding: 8px 16px; border: 1px solid #21262d; border-radius: 6px; background: #238636; color: #fff; cursor: pointer; font-size: 0.85rem; white-space: nowrap; }
+    .btn:hover { background: #2ea043; }
+    .btn-delete { background: transparent; color: #f85149; border: 1px solid #f8514933; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
+    .btn-delete:hover { background: #f8514922; }
+    .btn-sm { padding: 4px 10px; font-size: 0.75rem; border-radius: 4px; cursor: pointer; }
+    .btn-close-trade { background: #d29922; color: #0d1117; border: none; }
+    .btn-close-trade:hover { background: #e3b341; }
+    .refresh-btn { padding: 8px 16px; border: 1px solid #21262d; border-radius: 6px; background: #21262d; color: #c9d1d9; cursor: pointer; font-size: 0.85rem; }
+    .refresh-btn:hover { background: #30363d; }
+    .flex-between { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 20px; }
+    .metric { text-align: center; }
+    .metric-value { font-size: 1.5rem; font-weight: 700; }
+    .metric-label { font-size: 0.75rem; color: #8b949e; text-transform: uppercase; margin-top: 4px; }
+    .close-form { display: inline-flex; gap: 6px; align-items: center; }
+    .close-form input { width: 80px; padding: 4px 8px; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div id="app" class="container">
+    <h1>tema</h1>
+    <p class="subtitle">детектор сигналов prediction-маркетов</p>
+
+    <div class="tabs">
+      <button class="tab" :class="{ active: tab === 'signals' }" @click="tab = 'signals'">Сигналы</button>
+      <button class="tab" :class="{ active: tab === 'relations' }" @click="tab = 'relations'">Связи</button>
+      <button class="tab" :class="{ active: tab === 'trades' }" @click="tab = 'trades'">Сделки</button>
+      <button class="tab" :class="{ active: tab === 'markets' }" @click="tab = 'markets'">Рынки</button>
+    </div>
+
+    <!-- Сигналы -->
+    <div v-if="tab === 'signals'" class="card">
+      <div class="flex-between">
+        <h2>Сигналы</h2>
+        <button class="refresh-btn" @click="fetchSignals">Обновить</button>
+      </div>
+      <div v-if="signals.length === 0" class="empty">
+        Сигналов пока нет — добавьте связи между рынками
+      </div>
+      <table v-else>
+        <thead>
+          <tr>
+            <th>Рынок</th>
+            <th>Маркет.</th>
+            <th>Ожид.</th>
+            <th>Edge</th>
+            <th>Adj.</th>
+            <th>Напр.</th>
+            <th>Ставка</th>
+            <th>Сила</th>
+            <th>Повед.</th>
+            <th>Время</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="s in signals" :key="s.id">
+            <td :title="s.market_id">{{ s.title || s.market_id.slice(0, 12) + '…' }}</td>
+            <td>{{ (s.market_probability * 100).toFixed(1) }}%</td>
+            <td>{{ (s.expected_probability * 100).toFixed(1) }}%</td>
+            <td :class="s.edge >= 0 ? 'positive' : 'negative'">{{ (s.edge * 100).toFixed(1) }}%</td>
+            <td :class="s.adjusted_edge >= 0 ? 'positive' : 'negative'">{{ (s.adjusted_edge * 100).toFixed(1) }}%</td>
+            <td><span class="tag" :class="s.direction === 'BUY YES' ? 'tag-yes' : 'tag-no'">{{ s.direction }}</span></td>
+            <td>${{ s.bet_size.toFixed(0) }}</td>
+            <td :class="strengthClass(s.adjusted_edge)">{{ strengthLabel(s.adjusted_edge) }}</td>
+            <td><span class="tag" :class="s.behavior === 'crowd' ? 'tag-crowd' : 'tag-neutral'">{{ s.behavior }}</span></td>
+            <td>{{ s.timestamp }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Связи -->
+    <div v-if="tab === 'relations'" class="card">
+      <div class="flex-between">
+        <h2>Связи</h2>
+        <button class="refresh-btn" @click="fetchRelations">Обновить</button>
+      </div>
+
+      <form @submit.prevent="addRelation" style="margin-bottom: 16px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr auto auto auto; gap: 10px; align-items: end;">
+          <div>
+            <label>Источник (market_id)</label>
+            <input v-model="form.source_market_id" list="market-list-src" placeholder="ID или название рынка" required>
+          </div>
+          <div>
+            <label>Цель (market_id)</label>
+            <input v-model="form.target_market_id" list="market-list-tgt" placeholder="ID или название рынка" required>
+          </div>
+          <div>
+            <label>Тип</label>
+            <select v-model="form.relation_type">
+              <option value="positive">positive</option>
+              <option value="negative">negative</option>
+            </select>
+          </div>
+          <div>
+            <label>Вес</label>
+            <input v-model.number="form.weight" type="number" min="0.01" max="1" step="0.1" required>
+          </div>
+          <div>
+            <button class="btn" type="submit">Добавить</button>
+          </div>
+        </div>
+        <datalist id="market-list-src">
+          <option v-for="m in markets" :key="m.id" :value="m.id" :label="m.title"></option>
+        </datalist>
+        <datalist id="market-list-tgt">
+          <option v-for="m in markets" :key="m.id" :value="m.id" :label="m.title"></option>
+        </datalist>
+      </form>
+
+      <table v-if="relations.length > 0">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Источник → Цель</th>
+            <th>Тип</th>
+            <th>Вес</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in relations" :key="r.id">
+            <td>{{ r.id }}</td>
+            <td>
+              <div style="font-size:0.85rem;"><strong>{{ r.source_market_title || '—' }}</strong></div>
+              <div style="font-size:0.75rem; color:#8b949e;">→ <strong>{{ r.target_market_title || '—' }}</strong></div>
+            </td>
+            <td><span class="tag" :class="r.relation_type === 'positive' ? 'tag-yes' : 'tag-no'">{{ r.relation_type }}</span></td>
+            <td>{{ r.weight }}</td>
+            <td><button class="btn-delete" @click="deleteRelation(r.id)">✕</button></td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-else class="empty">Связей пока нет</div>
+    </div>
+
+    <!-- Сделки -->
+    <div v-if="tab === 'trades'">
+      <div class="metrics" v-if="metrics">
+        <div class="metric">
+          <div class="metric-value" :class="metrics.total_pnl >= 0 ? 'positive' : 'negative'">${{ metrics.total_pnl.toFixed(2) }}</div>
+          <div class="metric-label">PnL</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value">{{ (metrics.roi * 100).toFixed(1) }}%</div>
+          <div class="metric-label">ROI</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value">{{ (metrics.win_rate * 100).toFixed(0) }}%</div>
+          <div class="metric-label">Win Rate</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value">{{ metrics.total_trades }}</div>
+          <div class="metric-label">Всего</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value">{{ metrics.wins }}/{{ metrics.losses }}</div>
+          <div class="metric-label">Win/Loss</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="flex-between">
+          <h2>Сделки</h2>
+          <button class="refresh-btn" @click="fetchTrades">Обновить</button>
+        </div>
+        <div v-if="trades.length === 0" class="empty">
+          Сделок пока нет — сигналы создаются автоматически
+        </div>
+        <table v-else>
+          <thead>
+            <tr>
+              <th>Рынок</th>
+              <th>Напр.</th>
+              <th>Вход</th>
+              <th>Выход</th>
+              <th>Ставка</th>
+              <th>PnL</th>
+              <th>Статус</th>
+              <th>Открыт</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="t in trades" :key="t.id">
+              <td :title="t.market_id">{{ t.title || t.market_id.slice(0, 12) + '…' }}</td>
+              <td><span class="tag" :class="t.direction === 'BUY YES' ? 'tag-yes' : 'tag-no'">{{ t.direction }}</span></td>
+              <td>{{ (t.entry_price * 100).toFixed(1) }}¢</td>
+              <td>{{ t.exit_price ? (t.exit_price * 100).toFixed(1) + '¢' : '—' }}</td>
+              <td>${{ t.bet_size.toFixed(0) }}</td>
+              <td v-if="t.pnl !== null" :class="t.pnl >= 0 ? 'positive' : 'negative'">${{ t.pnl.toFixed(2) }}</td>
+              <td v-else>—</td>
+              <td><span class="tag" :class="t.status === 'open' ? 'tag-open' : 'tag-closed'">{{ t.status }}</span></td>
+              <td>{{ t.timestamp_open }}</td>
+              <td>
+                <div v-if="t.status === 'open'" class="close-form">
+                  <input v-model.number="closeForms[t.id]" type="number" min="0" max="1" step="0.01" placeholder="цена">
+                  <button class="btn-sm btn-close-trade" @click="closeTrade(t.id)">Закрыть</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Рынки -->
+    <div v-if="tab === 'markets'" class="card">
+      <div class="flex-between">
+        <h2>Рынки</h2>
+        <button class="refresh-btn" @click="fetchMarkets">Обновить</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Название</th>
+            <th>Создан</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="m in markets" :key="m.id">
+            <td :title="m.id">{{ m.id.slice(0, 16) }}…</td>
+            <td>{{ m.title }}</td>
+            <td>{{ formatDate(m.created_at) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, onMounted } = Vue
+
+    const API = '__BASE_PATH__/api'
+
+    createApp({
+      setup() {
+        const tab = ref('signals')
+        const signals = ref([])
+        const relations = ref([])
+        const markets = ref([])
+        const trades = ref([])
+        const metrics = ref(null)
+        const closeForms = reactive({})
+        const form = ref({
+          source_market_id: '',
+          target_market_id: '',
+          relation_type: 'positive',
+          weight: 0.5
+        })
+
+        async function fetchSignals() {
+          try {
+            const r = await fetch(API + '/signals?limit=50')
+            signals.value = await r.json()
+          } catch (e) { console.error(e) }
+        }
+
+        async function fetchRelations() {
+          try {
+            const r = await fetch(API + '/relations')
+            relations.value = await r.json()
+          } catch (e) { console.error(e) }
+        }
+
+        async function fetchMarkets() {
+          try {
+            const r = await fetch(API + '/markets')
+            markets.value = await r.json()
+          } catch (e) { console.error(e) }
+        }
+
+        async function fetchTrades() {
+          try {
+            const [tr, mr] = await Promise.all([
+              fetch(API + '/trades?limit=100'),
+              fetch(API + '/trades/metrics')
+            ])
+            trades.value = await tr.json()
+            metrics.value = await mr.json()
+          } catch (e) { console.error(e) }
+        }
+
+        async function addRelation() {
+          try {
+            const r = await fetch(API + '/relations', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(form.value)
+            })
+            if (r.ok) {
+              form.value = { source_market_id: '', target_market_id: '', relation_type: 'positive', weight: 0.5 }
+              await fetchRelations()
+            }
+          } catch (e) { console.error(e) }
+        }
+
+        async function deleteRelation(id) {
+          try {
+            await fetch(API + '/relations/' + id, { method: 'DELETE' })
+            await fetchRelations()
+          } catch (e) { console.error(e) }
+        }
+
+        async function closeTrade(id) {
+          const exitPrice = closeForms[id]
+          if (!exitPrice || exitPrice <= 0 || exitPrice > 1) return
+          try {
+            const r = await fetch(API + '/trades/' + id + '/close', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ exit_price: exitPrice })
+            })
+            if (r.ok) {
+              delete closeForms[id]
+              await fetchTrades()
+            }
+          } catch (e) { console.error(e) }
+        }
+
+        function strengthLabel(adj) {
+          const abs = Math.abs(adj)
+          if (abs >= 0.25) return 'сильный'
+          if (abs >= 0.15) return 'средний'
+          return 'слабый'
+        }
+
+        function strengthClass(adj) {
+          const abs = Math.abs(adj)
+          if (abs >= 0.25) return 'strength-strong'
+          if (abs >= 0.15) return 'strength-medium'
+          return 'strength-weak'
+        }
+
+        function formatDate(d) {
+          if (!d) return ''
+          return new Date(d).toLocaleString('ru-RU')
+        }
+
+        onMounted(() => {
+          fetchSignals()
+          fetchRelations()
+          fetchMarkets()
+        })
+
+        return { tab, signals, relations, markets, trades, metrics, closeForms, form, fetchSignals, fetchRelations, fetchMarkets, fetchTrades, addRelation, deleteRelation, closeTrade, strengthLabel, strengthClass, formatDate }
+      }
+    }).mount('#app')
+  </script>
+</body>
+</html>
