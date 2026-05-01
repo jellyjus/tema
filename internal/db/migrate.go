@@ -92,8 +92,15 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		`CREATE INDEX IF NOT EXISTS idx_signals_history_market ON signals_history(market_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_signals_history_archived ON signals_history(archived_at)`,
 
-		`ALTER TABLE trades ADD CONSTRAINT IF NOT EXISTS chk_exit_price_binary
-			CHECK (exit_price IS NULL OR exit_price IN (0, 1))`,
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_constraint WHERE conname = 'chk_exit_price_binary'
+			) THEN
+				ALTER TABLE trades ADD CONSTRAINT chk_exit_price_binary
+					CHECK (exit_price IS NULL OR exit_price IN (0, 1));
+			END IF;
+		END $$`,
 	}
 
 	for i, q := range queries {
