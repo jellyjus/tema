@@ -473,7 +473,7 @@ func (s *Store) GetEdgePerformance(ctx context.Context) ([]EdgeBucket, error) {
 	}
 	defer rows.Close()
 
-	var buckets []EdgeBucket
+	buckets := make([]EdgeBucket, 0)
 	for rows.Next() {
 		var b EdgeBucket
 		if err := rows.Scan(&b.Range, &b.Count, &b.AvgPnL, &b.TotalPnL, &b.WinRate); err != nil {

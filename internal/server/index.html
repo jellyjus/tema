@@ -370,7 +370,7 @@
         async function fetchAnalytics() {
           try {
             const r = await fetch(API + '/trades/edge-performance')
-            edgeBuckets.value = await r.json()
+            edgeBuckets.value = (await r.json()) ?? []
           } catch (e) { console.error(e) }
         }
 
