@@ -3,6 +3,7 @@ package server
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,13 +16,21 @@ import (
 var indexHTML []byte
 
 type Server struct {
-	store    *db.Store
-	mux      *http.ServeMux
-	basePath string
+	store                 *db.Store
+	mux                   *http.ServeMux
+	basePath              string
+	maxRelationsPerTarget int
+	bankroll              float64
 }
 
-func New(store *db.Store, basePath string) *Server {
-	s := &Server{store: store, mux: http.NewServeMux(), basePath: basePath}
+func New(store *db.Store, basePath string, maxRelationsPerTarget int, bankroll float64) *Server {
+	s := &Server{
+		store:                 store,
+		mux:                   http.NewServeMux(),
+		basePath:              basePath,
+		maxRelationsPerTarget: maxRelationsPerTarget,
+		bankroll:              bankroll,
+	}
 	s.routes()
 	return s
 }
@@ -42,6 +51,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/trades", s.handleOpenTrade)
 	s.mux.HandleFunc("POST /api/trades/{id}/close", s.handleCloseTrade)
 	s.mux.HandleFunc("GET /api/trades/metrics", s.handleTradeMetrics)
+	s.mux.HandleFunc("GET /api/trades/edge-performance", s.handleEdgePerformance)
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -110,6 +120,16 @@ func (s *Server) handleCreateRelation(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.Weight <= 0 || input.Weight > 1 {
 		http.Error(w, "weight must be in (0, 1]", http.StatusBadRequest)
+		return
+	}
+
+	count, err := s.store.GetRelationCountForTarget(r.Context(), input.TargetMarketID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if count >= s.maxRelationsPerTarget {
+		http.Error(w, fmt.Sprintf("max %d relations per target market reached", s.maxRelationsPerTarget), http.StatusBadRequest)
 		return
 	}
 
@@ -302,8 +322,8 @@ func (s *Server) handleCloseTrade(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
-	if input.ExitPrice <= 0 || input.ExitPrice > 1 {
-		http.Error(w, "exit_price must be in (0, 1]", http.StatusBadRequest)
+	if input.ExitPrice != 0 && input.ExitPrice != 1 {
+		http.Error(w, "exit_price must be 0 or 1", http.StatusBadRequest)
 		return
 	}
 
@@ -321,5 +341,46 @@ func (s *Server) handleTradeMetrics(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, m)
+
+	exposure, err := s.store.GetTotalExposure(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	type metricsResponse struct {
+		TotalPnL       float64 `json:"total_pnl"`
+		TotalVolume    float64 `json:"total_volume"`
+		ROI            float64 `json:"roi"`
+		WinRate        float64 `json:"win_rate"`
+		TotalTrades    int     `json:"total_trades"`
+		Wins           int     `json:"wins"`
+		Losses         int     `json:"losses"`
+		TotalExposure  float64 `json:"total_exposure"`
+		ExposurePct    float64 `json:"exposure_pct"`
+	}
+
+	resp := metricsResponse{
+		TotalPnL:      m.TotalPnL,
+		TotalVolume:   m.TotalVolume,
+		ROI:           m.ROI,
+		WinRate:       m.WinRate,
+		TotalTrades:   m.TotalTrades,
+		Wins:          m.Wins,
+		Losses:        m.Losses,
+		TotalExposure: exposure,
+	}
+	if s.bankroll > 0 {
+		resp.ExposurePct = exposure / s.bankroll
+	}
+	writeJSON(w, resp)
+}
+
+func (s *Server) handleEdgePerformance(w http.ResponseWriter, r *http.Request) {
+	buckets, err := s.store.GetEdgePerformance(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, buckets)
 }

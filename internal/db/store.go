@@ -254,6 +254,14 @@ func (s *Store) ClearSignals(ctx context.Context) error {
 	return err
 }
 
+func (s *Store) ArchiveSignals(ctx context.Context) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO signals_history (market_id, market_probability, expected_probability, edge, adjusted_edge, direction, behavior, bet_size, timestamp)
+		 SELECT market_id, market_probability, expected_probability, edge, adjusted_edge, direction, behavior, bet_size, timestamp FROM signals`,
+	)
+	return err
+}
+
 func (s *Store) GetMarketVolumes(ctx context.Context) (map[string]float64, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT DISTINCT ON (market_id)
@@ -389,12 +397,12 @@ func (s *Store) GetTradeMetrics(ctx context.Context) (*TradeMetrics, error) {
 	var m TradeMetrics
 	err := s.pool.QueryRow(ctx,
 		`SELECT
-			COALESCE(SUM(pnl), 0),
-			COALESCE(SUM(bet_size), 0),
-			COUNT(*),
-			COALESCE(SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN pnl <= 0 THEN 1 ELSE 0 END), 0)
-		 FROM trades WHERE status = 'closed'`,
+			COALESCE(SUM(pnl) FILTER (WHERE status = 'closed'), 0),
+			COALESCE(SUM(bet_size) FILTER (WHERE status = 'closed'), 0),
+			COUNT(*) FILTER (WHERE status = 'closed'),
+			COALESCE(SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) FILTER (WHERE status = 'closed'), 0),
+			COALESCE(SUM(CASE WHEN pnl <= 0 THEN 1 ELSE 0 END) FILTER (WHERE status = 'closed'), 0)
+		 FROM trades`,
 	).Scan(&m.TotalPnL, &m.TotalVolume, &m.TotalTrades, &m.Wins, &m.Losses)
 	if err != nil {
 		return nil, err
@@ -406,4 +414,72 @@ func (s *Store) GetTradeMetrics(ctx context.Context) (*TradeMetrics, error) {
 		m.WinRate = float64(m.Wins) / float64(m.TotalTrades)
 	}
 	return &m, nil
+}
+
+func (s *Store) CountOpenTrades(ctx context.Context) (int, error) {
+	var count int
+	err := s.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM trades WHERE status = 'open'`,
+	).Scan(&count)
+	return count, err
+}
+
+func (s *Store) GetTotalExposure(ctx context.Context) (float64, error) {
+	var exposure float64
+	err := s.pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(bet_size), 0) FROM trades WHERE status = 'open'`,
+	).Scan(&exposure)
+	return exposure, err
+}
+
+func (s *Store) GetRelationCountForTarget(ctx context.Context, targetMarketID string) (int, error) {
+	var count int
+	err := s.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM relations WHERE target_market_id = $1`,
+		targetMarketID,
+	).Scan(&count)
+	return count, err
+}
+
+type EdgeBucket struct {
+	Range    string  `json:"range"`
+	Count    int     `json:"count"`
+	AvgPnL   float64 `json:"avg_pnl"`
+	TotalPnL float64 `json:"total_pnl"`
+	WinRate  float64 `json:"winrate"`
+}
+
+func (s *Store) GetEdgePerformance(ctx context.Context) ([]EdgeBucket, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT
+			CASE
+				WHEN abs(s.adjusted_edge) >= 0.10 AND abs(s.adjusted_edge) < 0.15 THEN '0.10-0.15'
+				WHEN abs(s.adjusted_edge) >= 0.15 AND abs(s.adjusted_edge) < 0.25 THEN '0.15-0.25'
+				WHEN abs(s.adjusted_edge) >= 0.25 THEN '>0.25'
+			END AS range_label,
+			COUNT(*),
+			COALESCE(AVG(t.pnl), 0),
+			COALESCE(SUM(t.pnl), 0),
+			COALESCE(SUM(CASE WHEN t.pnl > 0 THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0), 0)
+		 FROM trades t
+		 JOIN signals s ON s.market_id = t.market_id
+		 WHERE t.status = 'closed'
+		   AND abs(s.adjusted_edge) >= 0.10
+		 GROUP BY range_label
+		 ORDER BY range_label`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var buckets []EdgeBucket
+	for rows.Next() {
+		var b EdgeBucket
+		if err := rows.Scan(&b.Range, &b.Count, &b.AvgPnL, &b.TotalPnL, &b.WinRate); err != nil {
+			return nil, err
+		}
+		buckets = append(buckets, b)
+	}
+	return buckets, rows.Err()
 }

@@ -75,6 +75,25 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		)`,
 
 		`ALTER TABLE signals ADD COLUMN IF NOT EXISTS bet_size DOUBLE PRECISION NOT NULL DEFAULT 0`,
+
+		`CREATE TABLE IF NOT EXISTS signals_history (
+			id BIGSERIAL PRIMARY KEY,
+			market_id TEXT NOT NULL,
+			market_probability DOUBLE PRECISION NOT NULL,
+			expected_probability DOUBLE PRECISION NOT NULL,
+			edge DOUBLE PRECISION NOT NULL,
+			adjusted_edge DOUBLE PRECISION NOT NULL,
+			direction TEXT NOT NULL,
+			behavior TEXT NOT NULL DEFAULT 'neutral',
+			bet_size DOUBLE PRECISION NOT NULL DEFAULT 0,
+			timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
+			archived_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_signals_history_market ON signals_history(market_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_signals_history_archived ON signals_history(archived_at)`,
+
+		`ALTER TABLE trades ADD CONSTRAINT IF NOT EXISTS chk_exit_price_binary
+			CHECK (exit_price IS NULL OR exit_price IN (0, 1))`,
 	}
 
 	for i, q := range queries {

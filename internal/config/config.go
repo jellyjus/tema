@@ -8,15 +8,19 @@ import (
 )
 
 type Config struct {
-	DatabaseURL          string
-	FetchInterval        time.Duration
-	Port                 string
-	SignalThreshold      float64
-	MinVolume            float64
-	PriceChangeThreshold float64
-	Bankroll             float64
-	RiskK                float64
-	BasePath             string
+	DatabaseURL           string
+	FetchInterval         time.Duration
+	Port                  string
+	SignalThreshold       float64
+	MinVolume             float64
+	PriceChangeThreshold  float64
+	Bankroll              float64
+	RiskK                 float64
+	BasePath              string
+	MaxActiveSignals      int
+	MaxOpenTrades         int
+	MaxRelationsPerTarget int
+	AutoTrade             bool
 }
 
 func Load() (*Config, error) {
@@ -76,15 +80,47 @@ func Load() (*Config, error) {
 
 	basePath := os.Getenv("BASE_PATH")
 
+	maxActiveSignals := 10
+	if v := os.Getenv("MAX_ACTIVE_SIGNALS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxActiveSignals = n
+		}
+	}
+
+	maxOpenTrades := 10
+	if v := os.Getenv("MAX_OPEN_TRADES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxOpenTrades = n
+		}
+	}
+
+	maxRelationsPerTarget := 5
+	if v := os.Getenv("MAX_RELATIONS_PER_TARGET"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxRelationsPerTarget = n
+		}
+	}
+
+	autoTrade := true
+	if v := os.Getenv("AUTO_TRADE"); v != "" {
+		if v == "false" || v == "0" {
+			autoTrade = false
+		}
+	}
+
 	return &Config{
-		DatabaseURL:          dbURL,
-		FetchInterval:        time.Duration(intervalSec) * time.Second,
-		Port:                 port,
-		SignalThreshold:      threshold,
-		MinVolume:            minVolume,
-		PriceChangeThreshold: priceChangeThreshold,
-		Bankroll:             bankroll,
-		RiskK:                riskK,
-		BasePath:             basePath,
+		DatabaseURL:           dbURL,
+		FetchInterval:         time.Duration(intervalSec) * time.Second,
+		Port:                  port,
+		SignalThreshold:       threshold,
+		MinVolume:             minVolume,
+		PriceChangeThreshold:  priceChangeThreshold,
+		Bankroll:              bankroll,
+		RiskK:                 riskK,
+		BasePath:              basePath,
+		MaxActiveSignals:      maxActiveSignals,
+		MaxOpenTrades:         maxOpenTrades,
+		MaxRelationsPerTarget: maxRelationsPerTarget,
+		AutoTrade:             autoTrade,
 	}, nil
 }

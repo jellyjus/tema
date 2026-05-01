@@ -42,7 +42,7 @@ func main() {
 	log.Println("db migrated")
 
 	f := fetcher.New()
-	srv := server.New(store, cfg.BasePath)
+	srv := server.New(store, cfg.BasePath, cfg.MaxRelationsPerTarget, cfg.Bankroll)
 
 	behavCfg := behavior.Config{PriceChangeThreshold: cfg.PriceChangeThreshold}
 	sizerCfg := sizer.Config{
@@ -54,7 +54,7 @@ func main() {
 		ExtremeBoundPct:  0.5,
 		ExtremeThreshold: 0.9,
 	}
-	go runFetcher(ctx, f, store, cfg.FetchInterval, cfg.SignalThreshold, cfg.MinVolume, behavCfg, sizerCfg)
+	go runFetcher(ctx, f, store, cfg.FetchInterval, cfg.SignalThreshold, cfg.MinVolume, behavCfg, sizerCfg, cfg.MaxActiveSignals, cfg.MaxOpenTrades, cfg.AutoTrade)
 
 	httpServer := &http.Server{
 		Addr:    ":" + cfg.Port,
@@ -79,7 +79,7 @@ func main() {
 	cancel()
 }
 
-func runFetcher(ctx context.Context, f *fetcher.Fetcher, store *db.Store, interval time.Duration, threshold, minVolume float64, behavCfg behavior.Config, sizerCfg sizer.Config) {
+func runFetcher(ctx context.Context, f *fetcher.Fetcher, store *db.Store, interval time.Duration, threshold, minVolume float64, behavCfg behavior.Config, sizerCfg sizer.Config, maxActiveSignals, maxOpenTrades int, autoTrade bool) {
 	fetchAndSave := func() {
 		log.Println("fetching markets...")
 		markets, err := f.FetchActiveMarkets(ctx)
@@ -94,7 +94,7 @@ func runFetcher(ctx context.Context, f *fetcher.Fetcher, store *db.Store, interv
 		}
 		log.Printf("saved %d/%d markets", saved, len(markets))
 
-		generateSignals(ctx, store, threshold, minVolume, behavCfg, sizerCfg)
+		generateSignals(ctx, store, threshold, minVolume, behavCfg, sizerCfg, maxActiveSignals, maxOpenTrades, autoTrade)
 	}
 
 	fetchAndSave()
@@ -111,7 +111,7 @@ func runFetcher(ctx context.Context, f *fetcher.Fetcher, store *db.Store, interv
 	}
 }
 
-func generateSignals(ctx context.Context, store *db.Store, threshold, minVolume float64, behavCfg behavior.Config, sizerCfg sizer.Config) {
+func generateSignals(ctx context.Context, store *db.Store, threshold, minVolume float64, behavCfg behavior.Config, sizerCfg sizer.Config, maxActiveSignals, maxOpenTrades int, autoTrade bool) {
 	relations, err := store.GetAllRelations(ctx)
 	if err != nil {
 		log.Printf("relations error: %v", err)
@@ -170,8 +170,20 @@ func generateSignals(ctx context.Context, store *db.Store, threshold, minVolume 
 
 	sized := sizer.Size(signals, sizerCfg)
 
+	if len(sized) > maxActiveSignals {
+		sized = sized[:maxActiveSignals]
+	}
+
+	if err := store.ArchiveSignals(ctx); err != nil {
+		log.Printf("archive signals: %v", err)
+	}
 	if err := store.ClearSignals(ctx); err != nil {
 		log.Printf("clear signals: %v", err)
+	}
+
+	openCount, err := store.CountOpenTrades(ctx)
+	if err != nil {
+		log.Printf("count open trades: %v", err)
 	}
 
 	log.Printf("=== %d signal(s) ===", len(sized))
@@ -192,6 +204,15 @@ func generateSignals(ctx context.Context, store *db.Store, threshold, minVolume 
 			log.Printf("insert signal %s: %v", s.MarketID, err)
 		}
 
+		if !autoTrade {
+			continue
+		}
+
+		if openCount >= maxOpenTrades {
+			log.Printf("max open trades reached (%d), skipping trade creation", maxOpenTrades)
+			continue
+		}
+
 		hasOpen, err := store.HasOpenTrade(ctx, s.MarketID)
 		if err != nil {
 			log.Printf("check open trade %s: %v", s.MarketID, err)
@@ -205,6 +226,8 @@ func generateSignals(ctx context.Context, store *db.Store, threshold, minVolume 
 			})
 			if err != nil {
 				log.Printf("insert trade %s: %v", s.MarketID, err)
+			} else {
+				openCount++
 			}
 		}
 	}
